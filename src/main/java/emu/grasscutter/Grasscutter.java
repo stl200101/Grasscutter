@@ -6,8 +6,11 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.InputStreamReader;
 import java.net.InetSocketAddress;
+import java.util.Calendar;
 
 import emu.grasscutter.command.CommandMap;
+import emu.grasscutter.plugin.PluginManager;
+import emu.grasscutter.scripts.ScriptLoader;
 import emu.grasscutter.utils.Utils;
 import org.reflections.Reflections;
 import org.slf4j.LoggerFactory;
@@ -30,9 +33,12 @@ public final class Grasscutter {
 	private static final Gson gson = new GsonBuilder().setPrettyPrinting().create();
 	private static final File configFile = new File("./config.json");
 	
+	private static int day; // Current day of week
+	
 	public static RunMode MODE = RunMode.BOTH;
 	private static DispatchServer dispatchServer;
 	private static GameServer gameServer;
+	private static PluginManager pluginManager;
 	
 	public static final Reflections reflector = new Reflections("emu.grasscutter");
 	
@@ -52,15 +58,11 @@ public final class Grasscutter {
     	
 		for (String arg : args) {
 			switch (arg.toLowerCase()) {
-				case "-auth":
-					MODE = RunMode.AUTH;
-					break;
-				case "-game":
-					MODE = RunMode.GAME;
-					break;
-				case "-handbook":
-					Tools.createGmHandbook();
-					return;
+				case "-auth" -> MODE = RunMode.AUTH;
+				case "-game" -> MODE = RunMode.GAME;
+				case "-handbook" -> {
+					Tools.createGmHandbook(); return;
+				}
 			}
 		}
 		
@@ -68,22 +70,27 @@ public final class Grasscutter {
 		Grasscutter.getLogger().info("Starting Grasscutter...");
 		
 		// Load all resources.
+		Grasscutter.updateDayOfWeek();
 		ResourceLoader.loadAll();
+		ScriptLoader.init();
+		
 		// Database
 		DatabaseManager.initialize();
+
+		// Create plugin manager instance.
+		pluginManager = new PluginManager();
+		
+		// Create server instances.
+		dispatchServer = new DispatchServer();
+		gameServer = new GameServer(new InetSocketAddress(getConfig().getGameServerOptions().Ip, getConfig().getGameServerOptions().Port));
 		
 		// Start servers.
 		if(getConfig().RunMode.equalsIgnoreCase("HYBRID")) {
-			dispatchServer = new DispatchServer();
 			dispatchServer.start();
-
-			gameServer = new GameServer(new InetSocketAddress(getConfig().getGameServerOptions().Ip, getConfig().getGameServerOptions().Port));
 			gameServer.start();
-		} else if(getConfig().RunMode.equalsIgnoreCase("DISPATCH_ONLY")) {
-			dispatchServer = new DispatchServer();
+		} else if (getConfig().RunMode.equalsIgnoreCase("DISPATCH_ONLY")) {
 			dispatchServer.start();
-		} else if(getConfig().RunMode.equalsIgnoreCase("GAME_ONLY")) {
-			gameServer = new GameServer(new InetSocketAddress(getConfig().getGameServerOptions().Ip, getConfig().getGameServerOptions().Port));
+		} else if (getConfig().RunMode.equalsIgnoreCase("GAME_ONLY")) {
 			gameServer.start();
 		} else {
 			getLogger().error("Invalid server run mode. " + getConfig().RunMode);
@@ -91,12 +98,23 @@ public final class Grasscutter {
 			getLogger().error("Shutting down...");
 			System.exit(1);
 		}
-
-
+		
+		// Enable all plugins.
+		pluginManager.enablePlugins();
 		
 		// Open console.
 		startConsole();
+		// Hook into shutdown event.
+		Runtime.getRuntime().addShutdownHook(new Thread(Grasscutter::onShutdown));
     }
+
+	/**
+	 * Server shutdown event.
+	 */
+	private static void onShutdown() {
+		// Disable all plugins.
+		pluginManager.disablePlugins();
+	}
 	
 	public static void loadConfig() {
 		try (FileReader file = new FileReader(configFile)) {
@@ -112,23 +130,24 @@ public final class Grasscutter {
 		try (FileWriter file = new FileWriter(configFile)) {
 			file.write(gson.toJson(config));
 		} catch (Exception e) {
-			Grasscutter.getLogger().error("Config save error");
+			Grasscutter.getLogger().error("Unable to save config file.");
 		}
 	}
 	
 	public static void startConsole() {
 		String input;
+		getLogger().info("Done! For help, type \"help\"");
 		try (BufferedReader br = new BufferedReader(new InputStreamReader(System.in))) {
 			while ((input = br.readLine()) != null) {
 				try {
 					if(getConfig().RunMode.equalsIgnoreCase("DISPATCH_ONLY")) {
-						getLogger().error("Commands are not supported in dispatch only mode");
+						getLogger().error("Commands are not supported in dispatch only mode.");
 						return;
 					}
+					
 					CommandMap.getInstance().invoke(null, input);
 				} catch (Exception e) {
-					Grasscutter.getLogger().error("Command error: ");
-					e.printStackTrace();
+					Grasscutter.getLogger().error("Command error:", e);
 				}
 			}
 		} catch (Exception e) {
@@ -160,5 +179,18 @@ public final class Grasscutter {
 
 	public static GameServer getGameServer() {
 		return gameServer;
+	}
+	
+	public static PluginManager getPluginManager() {
+		return pluginManager;
+	}
+	
+	public static void updateDayOfWeek() {
+		Calendar calendar = Calendar.getInstance();
+		day = calendar.get(Calendar.DAY_OF_WEEK); 
+	}
+
+	public static int getCurrentDayOfWeek() {
+		return day;
 	}
 }
