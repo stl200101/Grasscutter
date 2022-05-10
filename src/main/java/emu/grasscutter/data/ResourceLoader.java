@@ -7,6 +7,7 @@ import java.util.Map.Entry;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.google.gson.Gson;
 import emu.grasscutter.utils.Utils;
 import org.reflections.Reflections;
 
@@ -27,7 +28,7 @@ public class ResourceLoader {
 
 	public static List<Class<?>> getResourceDefClasses() {
 		Reflections reflections = new Reflections(ResourceLoader.class.getPackage().getName());
-		Set<?> classes = reflections.getSubTypesOf(GenshinResource.class);
+		Set<?> classes = reflections.getSubTypesOf(GameResource.class);
 
 		List<Class<?>> classList = new ArrayList<>(classes.size());
 		classes.forEach(o -> {
@@ -48,14 +49,15 @@ public class ResourceLoader {
 		loadOpenConfig();
 		// Load resources
 		loadResources();
-		loadScenePoints();
 		// Process into depots
-		GenshinDepot.load();
+		GameDepot.load();
 		// Load spawn data
 		loadSpawnData();
+		// Load scene points - must be done AFTER resources are loaded
+		loadScenePoints();
 		// Custom - TODO move this somewhere else
 		try {
-			GenshinData.getAvatarSkillDepotDataMap().get(504).setAbilities(
+			GameData.getAvatarSkillDepotDataMap().get(504).setAbilities(
 				new AbilityEmbryoEntry(
 					"", 
 					new String[] {
@@ -68,7 +70,7 @@ public class ResourceLoader {
 						"Avatar_Player_WindBreathe_CameraController"
 					}
 			));
-			GenshinData.getAvatarSkillDepotDataMap().get(704).setAbilities(
+			GameData.getAvatarSkillDepotDataMap().get(704).setAbilities(
 				new AbilityEmbryoEntry(
 					"", 
 					new String[] {
@@ -95,7 +97,7 @@ public class ResourceLoader {
 			}
 
 			@SuppressWarnings("rawtypes")
-			Int2ObjectMap map = GenshinData.getMapByResourceDef(resourceDefinition);
+			Int2ObjectMap map = GameData.getMapByResourceDef(resourceDefinition);
 
 			if (map == null) {
 				continue;
@@ -119,14 +121,15 @@ public class ResourceLoader {
 	
 	@SuppressWarnings({"rawtypes", "unchecked"})
 	protected static void loadFromResource(Class<?> c, String fileName, Int2ObjectMap map) throws Exception {
-		try (FileReader fileReader = new FileReader(Grasscutter.getConfig().RESOURCE_FOLDER + "ExcelBinOutput/" + fileName)) {
-			List list = Grasscutter.getGsonFactory().fromJson(fileReader, TypeToken.getParameterized(Collection.class, c).getType());
+		FileReader fileReader = new FileReader(Grasscutter.getConfig().RESOURCE_FOLDER + "ExcelBinOutput/" + fileName);
+		Gson gson = Grasscutter.getGsonFactory();
+		List list = gson.fromJson(fileReader, List.class);
 
-			for (Object o : list) {
-				GenshinResource res = (GenshinResource) o;
-				res.onLoad();
-				map.put(res.getId(), res);
-			}
+		for (Object o : list) {
+			Map<String, Object> tempMap = Utils.switchPropertiesUpperLowerCase((Map<String, Object>) o, c);
+			GameResource res = gson.fromJson(gson.toJson(tempMap), TypeToken.get(c).getType());
+			res.onLoad();
+			map.put(res.getId(), res);
 		}
 	}
 
@@ -140,7 +143,7 @@ public class ResourceLoader {
 		}
 
 		List<ScenePointEntry> scenePointList = new ArrayList<>();
-		for (File file : folder.listFiles()) {
+		for (File file : Objects.requireNonNull(folder.listFiles())) {
 			ScenePointConfig config = null;
 			Integer sceneId = null;
 			
@@ -164,13 +167,17 @@ public class ResourceLoader {
 
 			for (Map.Entry<String, JsonElement> entry : config.points.entrySet()) {
 				PointData pointData = Grasscutter.getGsonFactory().fromJson(entry.getValue(), PointData.class);
+				pointData.setId(Integer.parseInt(entry.getKey()));
 
 				ScenePointEntry sl = new ScenePointEntry(sceneId + "_" + entry.getKey(), pointData);
 				scenePointList.add(sl);
+				GameData.getScenePointIdList().add(pointData.getId());
+				
+				pointData.updateDailyDungeon();
 			}
 
 			for (ScenePointEntry entry : scenePointList) {
-				GenshinData.getScenePointEntries().put(entry.getName(), entry);
+				GameData.getScenePointEntries().put(entry.getName(), entry);
 			}
 		}
 	}
@@ -190,7 +197,7 @@ public class ResourceLoader {
 		} else {
 			// Load from BinOutput
 			Pattern pattern = Pattern.compile("(?<=ConfigAvatar_)(.*?)(?=.json)");
-			
+
 			embryoList = new LinkedList<>();
 			File folder = new File(Utils.toFilePath(Grasscutter.getConfig().RESOURCE_FOLDER + "BinOutput/Avatar/"));
 			File[] files = folder.listFiles();
@@ -198,29 +205,29 @@ public class ResourceLoader {
 				Grasscutter.getLogger().error("Error loading ability embryos: no files found in " + folder.getAbsolutePath());
 				return;
 			}
-			
+
 			for (File file : files) {
 				AvatarConfig config;
 				String avatarName;
-				
+
 				Matcher matcher = pattern.matcher(file.getName());
 				if (matcher.find()) {
 					avatarName = matcher.group(0);
 				} else {
 					continue;
 				}
-				
+
 				try (FileReader fileReader = new FileReader(file)) {
 					config = Grasscutter.getGsonFactory().fromJson(fileReader, AvatarConfig.class);
 				} catch (Exception e) {
 					e.printStackTrace();
 					continue;
 				}
-				
+
 				if (config.abilities == null) {
 					continue;
 				}
-				
+
 				int s = config.abilities.size();
 				AbilityEmbryoEntry al = new AbilityEmbryoEntry(avatarName, config.abilities.stream().map(Object::toString).toArray(size -> new String[s]));
 				embryoList.add(al);
@@ -233,7 +240,7 @@ public class ResourceLoader {
 		}
 
 		for (AbilityEmbryoEntry entry : embryoList) {
-			GenshinData.getAbilityEmbryoInfo().put(entry.getName(), entry);
+			GameData.getAbilityEmbryoInfo().put(entry.getName(), entry);
 		}
 	}
 	
@@ -260,7 +267,7 @@ public class ResourceLoader {
 			entry.getSpawns().stream().forEach(s -> {
 				s.setGroup(entry);
 			});
-			GenshinDepot.getSpawnListById(entry.getSceneId()).insert(entry, entry.getPos().getX(), entry.getPos().getZ());
+			GameDepot.getSpawnListById(entry.getSceneId()).insert(entry, entry.getPos().getX(), entry.getPos().getZ());
 		}
 	}
 	
@@ -302,18 +309,7 @@ public class ResourceLoader {
 					}
 					
 					for (Entry<String, OpenConfigData[]> e : config.entrySet()) {
-						List<String> abilityList = new ArrayList<>();
-						int extraTalentIndex = 0;
-						
-						for (OpenConfigData entry : e.getValue()) {
-							if (entry.$type.contains("AddAbility")) {
-								abilityList.add(entry.abilityName);
-							} else if (entry.talentIndex > 0) {
-								extraTalentIndex = entry.talentIndex;
-							}
-						}
-						
-						OpenConfigEntry entry = new OpenConfigEntry(e.getKey(), abilityList, extraTalentIndex);
+						OpenConfigEntry entry = new OpenConfigEntry(e.getKey(), e.getValue());
 						map.put(entry.getName(), entry);
 					}
 				}
@@ -328,10 +324,10 @@ public class ResourceLoader {
 		}
 		
 		for (OpenConfigEntry entry : list) {
-			GenshinData.getOpenConfigEntries().put(entry.getName(), entry);
+			GameData.getOpenConfigEntries().put(entry.getName(), entry);
 		}
 	}
-	
+
 	// BinOutput configs
 	
 	private static class AvatarConfig {
@@ -349,9 +345,11 @@ public class ResourceLoader {
 		public OpenConfigData[] data;
 	}
 	
-	private static class OpenConfigData {
+	public static class OpenConfigData {
 		public String $type;
 		public String abilityName;
 		public int talentIndex;
+		public int skillID;
+		public int pointDelta;
 	}
 }

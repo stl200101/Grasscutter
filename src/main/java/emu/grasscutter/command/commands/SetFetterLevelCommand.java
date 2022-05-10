@@ -4,10 +4,12 @@ import java.util.List;
 
 import emu.grasscutter.command.Command;
 import emu.grasscutter.command.CommandHandler;
-import emu.grasscutter.data.GenshinData;
-import emu.grasscutter.game.GenshinPlayer;
-import emu.grasscutter.game.avatar.GenshinAvatar;
+import emu.grasscutter.data.GameData;
+import emu.grasscutter.game.avatar.Avatar;
+import emu.grasscutter.game.player.Player;
 import emu.grasscutter.server.packet.send.PacketAvatarFetterDataNotify;
+
+import static emu.grasscutter.utils.Language.translate;
 
 @Command(label = "setfetterlevel", usage = "setfetterlevel <level>",
         description = "Sets your fetter level for your current active character",
@@ -15,35 +17,35 @@ import emu.grasscutter.server.packet.send.PacketAvatarFetterDataNotify;
 public final class SetFetterLevelCommand implements CommandHandler {
 
     @Override
-    public void execute(GenshinPlayer sender, List<String> args) {
-        if (sender == null) {
-            CommandHandler.sendMessage(null, "Run this command in-game.");
+    public void execute(Player sender, Player targetPlayer, List<String> args) {
+        if (targetPlayer == null) {
+            CommandHandler.sendMessage(sender, translate("commands.execution.need_target"));
             return;
         }
 
-        if (args.size() < 1) {
-            CommandHandler.sendMessage(sender, "Usage: setfetterlevel <level>");
+        if (args.size() != 1) {
+            CommandHandler.sendMessage(sender, translate("commands.setFetterLevel.usage"));
             return;
         }
 
         try {
             int fetterLevel = Integer.parseInt(args.get(0));
             if (fetterLevel < 0 || fetterLevel > 10) {
-                CommandHandler.sendMessage(sender, "Fetter level must be between 0 and 10.");
+                CommandHandler.sendMessage(sender, translate("commands.setFetterLevel.range_error"));
                 return;
             }
-            GenshinAvatar avatar = sender.getTeamManager().getCurrentAvatarEntity().getAvatar();
+            Avatar avatar = targetPlayer.getTeamManager().getCurrentAvatarEntity().getAvatar();
 
             avatar.setFetterLevel(fetterLevel);
             if (fetterLevel != 10) {
-                avatar.setFetterExp(GenshinData.getAvatarFetterLevelDataMap().get(fetterLevel).getExp());
+                avatar.setFetterExp(GameData.getAvatarFetterLevelDataMap().get(fetterLevel).getExp());
             }
 		    avatar.save();
 		
-		    sender.sendPacket(new PacketAvatarFetterDataNotify(avatar));
-            CommandHandler.sendMessage(sender, "Fetter level set to " + fetterLevel);
+		    targetPlayer.sendPacket(new PacketAvatarFetterDataNotify(avatar));
+            CommandHandler.sendMessage(sender, translate("commands.setFetterLevel.success", fetterLevel));
         } catch (NumberFormatException ignored) {
-            CommandHandler.sendMessage(sender, "Invalid fetter level.");
+            CommandHandler.sendMessage(sender, translate("commands.setFetterLevel.level_error"));
         }
     }
     

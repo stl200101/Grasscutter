@@ -1,70 +1,74 @@
 package emu.grasscutter.command.commands;
 
+import emu.grasscutter.Grasscutter;
 import emu.grasscutter.command.Command;
 import emu.grasscutter.command.CommandHandler;
-import emu.grasscutter.game.GenshinPlayer;
+import emu.grasscutter.game.player.Player;
 import emu.grasscutter.utils.Position;
 
 import java.util.List;
 
-@Command(label = "teleport", usage = "teleport <x> <y> <z>", aliases = {"tp"},
+import static emu.grasscutter.utils.Language.translate;
+
+@Command(label = "teleport", usage = "teleport <x> <y> <z> [scene id]", aliases = {"tp"},
         description = "Change the player's position.", permission = "player.teleport")
 public final class TeleportCommand implements CommandHandler {
 
+    private float parseRelative(String input, Float current) {  // TODO: Maybe this will be useful elsewhere later
+        if (input.contains("~")) {  // Relative
+            if (!input.equals("~")) {  // Relative with offset
+                current += Float.parseFloat(input.replace("~", ""));
+            }  // Else no offset, no modification
+        } else {  // Absolute
+            current = Float.parseFloat(input);
+        }
+        return current;
+    }
+
     @Override
-    public void execute(GenshinPlayer sender, List<String> args) {
-        if (sender == null) {
-            CommandHandler.sendMessage(null, "Run this command in-game.");
+    public void execute(Player sender, Player targetPlayer, List<String> args) {
+        if (targetPlayer == null) {
+            CommandHandler.sendMessage(sender, translate("commands.execution.need_target"));
             return;
         }
 
-        if (args.size() < 3){
-            CommandHandler.sendMessage(sender, "Usage: /tp <x> <y> <z> [scene id]");
-            return;
+        Position pos = targetPlayer.getPos();
+        float x = pos.getX();
+        float y = pos.getY();
+        float z = pos.getZ();
+        int sceneId = targetPlayer.getSceneId();
+
+        switch (args.size()) {
+            case 4:
+                try {
+                    sceneId = Integer.parseInt(args.get(3));
+                }catch (NumberFormatException ignored) {
+                    CommandHandler.sendMessage(sender, translate("commands.execution.argument_error"));
+                }  // Fallthrough
+            case 3:
+                try {
+                    x = parseRelative(args.get(0), x);
+                    y = parseRelative(args.get(1), y);
+                    z = parseRelative(args.get(2), z);
+                } catch (NumberFormatException ignored) {
+                    CommandHandler.sendMessage(sender, translate("commands.teleport.invalid_position"));
+                }
+                break;
+            default:
+                CommandHandler.sendMessage(sender, translate("commands.teleport.usage"));
+                return;
         }
 
-        try {
-            float x = 0f;
-            float y = 0f;
-            float z = 0f;
-            if (args.get(0).contains("~")) {
-                if (args.get(0).equals("~")) {
-                    x = sender.getPos().getX();
-                } else {
-                    x = Float.parseFloat(args.get(0).replace("~", "")) + sender.getPos().getX();
-                }
-            } else {
-                x = Float.parseFloat(args.get(0));
-            }
-            if (args.get(1).contains("~")) {
-                if (args.get(1).equals("~")) {
-                    y = sender.getPos().getY();
-                } else {
-                    y = Float.parseFloat(args.get(1).replace("~", "")) + sender.getPos().getY();
-                }
-            } else {
-                y = Float.parseFloat(args.get(1));
-            }
-            if (args.get(2).contains("~")) {
-                if (args.get(2).equals("~")) {
-                    z = sender.getPos().getZ();
-                } else {
-                    z = Float.parseFloat(args.get(2).replace("~", "")) + sender.getPos().getZ();
-                }
-            } else {
-                z = Float.parseFloat(args.get(2));
-            }
-            int sceneId = sender.getSceneId();
-            if (args.size() == 4){
-                sceneId = Integer.parseInt(args.get(3));
-            }
-            Position target = new Position(x, y, z);
-            boolean result = sender.getWorld().transferPlayerToScene(sender, sceneId, target);
-            if (!result) {
-                CommandHandler.sendMessage(sender, "Invalid position.");
-            }
-        } catch (NumberFormatException ignored) {
-            CommandHandler.sendMessage(sender, "Invalid position.");
+        Position target_pos = new Position(x, y, z);
+        boolean result = targetPlayer.getWorld().transferPlayerToScene(targetPlayer, sceneId, target_pos);
+        if (!result) {
+            CommandHandler.sendMessage(sender, translate("commands.teleport.invalid_position"));
+        } else {
+            CommandHandler.sendMessage(sender, translate("commands.teleport.success", 
+                    targetPlayer.getNickname(), Float.toString(x), Float.toString(y), 
+                    Float.toString(z), Integer.toString(sceneId))
+            );
         }
+
     }
 }
