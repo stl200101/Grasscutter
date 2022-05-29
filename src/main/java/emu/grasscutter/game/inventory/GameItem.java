@@ -15,9 +15,9 @@ import dev.morphia.annotations.Transient;
 
 import emu.grasscutter.data.GameData;
 import emu.grasscutter.data.GameDepot;
-import emu.grasscutter.data.def.ItemData;
-import emu.grasscutter.data.def.ReliquaryAffixData;
-import emu.grasscutter.data.def.ReliquaryMainPropData;
+import emu.grasscutter.data.excels.ItemData;
+import emu.grasscutter.data.excels.ReliquaryAffixData;
+import emu.grasscutter.data.excels.ReliquaryMainPropData;
 import emu.grasscutter.database.DatabaseHelper;
 import emu.grasscutter.game.player.Player;
 import emu.grasscutter.game.props.FightProperty;
@@ -90,7 +90,7 @@ public class GameItem {
 
 		// Equip data
 		if (getItemType() == ItemType.ITEM_WEAPON) {
-			this.level = this.count > 1 ? this.count : 1;
+			this.level = Math.max(this.count, 1);
 			this.affixes = new ArrayList<>(2);
 			if (getItemData().getSkillAffix() != null) {
 				for (int skillAffix : getItemData().getSkillAffix()) {
@@ -415,12 +415,6 @@ public class GameItem {
 				Reliquary relic = this.toReliquaryProto();
 				proto.setEquip(Equip.newBuilder().setReliquary(relic).setIsLocked(this.isLocked()).build());
 				break;
-			case ITEM_MATERIAL:
-				Material material = Material.newBuilder()
-					.setCount(getCount())
-					.build();
-				proto.setMaterial(material);
-				break;
 			case ITEM_FURNITURE:
 				Furniture furniture = Furniture.newBuilder()
 					.setCount(getCount())
@@ -428,6 +422,10 @@ public class GameItem {
 				proto.setFurniture(furniture);
 				break;
 			default:
+				Material material = Material.newBuilder()
+					.setCount(getCount())
+					.build();
+				proto.setMaterial(material);
 				break;
 		}	
 				

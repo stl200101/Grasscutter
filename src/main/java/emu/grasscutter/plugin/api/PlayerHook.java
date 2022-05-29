@@ -28,6 +28,7 @@ public final class PlayerHook {
     
     /**
      * Kicks a player from the server.
+     * TODO: Refactor to kick using a packet.
      */
     public void kick() {
         this.player.getSession().close();
@@ -82,7 +83,7 @@ public final class PlayerHook {
     public void teleport(Position position) {
         this.player.getPos().set(position);
         this.player.sendPacket(new PacketPlayerEnterSceneNotify(this.player, 
-                EnterType.ENTER_JUMP, EnterReason.TransPoint,
+                EnterType.ENTER_TYPE_JUMP, EnterReason.TransPoint,
                 this.player.getSceneId(), position
         ));
     }
